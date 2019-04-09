@@ -5,7 +5,7 @@ public class Banker {
     public static void main(String[] args) throws IOException {
         // Simulate the cycle process using a static var/ var main and decrementing at every cycle.
         // Use a readyQueue and running process.
-        File f = new File("lab3-io/input-12");
+        File f = new File("lab3-io/input-01");
         Scanner input = new Scanner(f);
         List<String> tempTaskList = new ArrayList<>();
         List<Task> taskList = new ArrayList<>();
@@ -85,7 +85,7 @@ public class Banker {
         
         // ------------MAIN PROCESS LOOP------------
 
-        Queue<Task> readyQueue = new LinkedList<>(); // Tasks at every given cycle
+        List<LinkedList<Task>> readyQueue = new LinkedList<>(); // Tasks at every given cycle
         LinkedList<Task> blockedQueue = new LinkedList<>(); // For potentially removing deadlocks
         
         List<Integer> delayTimes = new ArrayList<>(); // Tracks each individual delay time
@@ -100,6 +100,7 @@ public class Banker {
             taskIsPending.add(false);
             usedThisCycle.add(false);
             delayTimes.add(0);
+            readyQueue.add(new LinkedList<>());
         }
         
         cycle = 0;
@@ -116,7 +117,7 @@ public class Banker {
             // Periodically check for ready tasks and load them
             for (Task currentTask : taskList) {
                 if (currentTask.readyTime == cycle && !abortedTasks.contains(currentTask.taskNumber)) {
-                    readyQueue.add(currentTask);
+                    readyQueue.get(currentTask.taskNumber - 1).add(currentTask);
                 }
             }
 
@@ -155,22 +156,27 @@ public class Banker {
                 deadlockPossible = false;
             }
 
-            while (!readyQueue.isEmpty()) {    
+            for (int i = 0; i < readyQueue.size(); i++) {    
                 // If task delay exists, don't poll it
-                Task currPeekTask = readyQueue.peek();
-                int peekTime = readyQueue.peek().taskNumber - 1;
+                Queue<Task> currentQueue = readyQueue.get(i);
+                if (currentQueue.isEmpty())
+                    continue;
+
+                Task currPeekTask = currentQueue.peek();
+                int peekNumber = currentQueue.peek().taskNumber - 1;
+    
                 if (!seenTasks.contains(currPeekTask)) {
-                    delayTimes.set(peekTime, currPeekTask.delay);
+                    delayTimes.set(peekNumber, currPeekTask.delay);
                     seenTasks.add(currPeekTask);
                 }
 
-                if (delayTimes.get(peekTime) > 0) {
-                    System.out.println("Delay time is " + delayTimes.get(peekTime));
-                    delayTimes.set(peekTime, delayTimes.get(peekTime) - 1);
+                if (delayTimes.get(peekNumber) > 0) {
+                    System.out.println("Task " + (peekNumber + 1) + " computes, " + delayTimes.get(peekNumber));
+                    delayTimes.set(peekNumber, delayTimes.get(peekNumber) - 1);
                     continue;
                 }
 
-                Task currentTask = readyQueue.poll();
+                Task currentTask = currentQueue.poll();
                 int taskIndex = currentTask.taskNumber - 1;
                 Task masterTask = masterTaskList.get(taskIndex);
 
@@ -223,7 +229,7 @@ public class Banker {
                         masterTaskIndices.add(taskIndex);
                         break;
                     case "terminate":
-                        System.out.println("Task " + currentTask.taskNumber + " terminated at " + (cycle + 1) + ".");
+                        System.out.println("Task " + currentTask.taskNumber + " terminated at " + cycle + ".");
                         pendingTerminatedQueue.add(currentTask);
                         break;
                 } // end switch
@@ -269,14 +275,14 @@ public class Banker {
             while (!pendingReadyQueue.isEmpty()) {
                 Task pendingReadyTask = pendingReadyQueue.poll();
                 int taskNumber = pendingReadyTask.taskNumber - 1;
-                readyQueue.add(pendingReadyTask);
+                readyQueue.get(taskNumber).addFirst(pendingReadyTask);
                 taskIsPending.set(taskNumber, false);
             }
 
             // Pending terminated tasks get added to terminatedList
             while (!pendingTerminatedQueue.isEmpty()) {
                 Task pendingTerminatedTask = pendingTerminatedQueue.poll();
-                int terminatedTime = cycle + 1;
+                int terminatedTime = cycle;
                 pendingTerminatedTask.terminatedTime = terminatedTime;
                 masterTaskList.get(pendingTerminatedTask.taskNumber - 1).terminatedTime = terminatedTime;
                 terminatedList.add(pendingTerminatedTask); 
@@ -350,7 +356,9 @@ public class Banker {
     public static void printInfo(List<Task> masterTaskList, Set<Integer> abortedTasks) {
         System.out.print("------------\n");
         int numTasks = masterTaskList.size();
-        
+        int totalTerminatedTime = 0;
+        int totalWaitingTime = 0;
+
         for (int i = 1; i <= numTasks; i++) {
             System.out.print("Task " + i + "\t");
             if (abortedTasks.contains(i)){
@@ -361,10 +369,18 @@ public class Banker {
                 int terminatedTime = currentTask.terminatedTime;
                 int waitingTime = currentTask.waitingTime;
 
+                totalTerminatedTime += terminatedTime;
+                totalWaitingTime += waitingTime;
+
                 System.out.print("Terminated at: " + terminatedTime + "\t");
                 System.out.print("Waiting time: " + waitingTime + "\t");
                 System.out.print("Waiting time %: " + ((waitingTime/(double)(terminatedTime)) * 100) + "%\n");
             }   
         }
+
+        System.out.print("Total: " + totalTerminatedTime + "\t");
+        System.out.print("Total waiting time: " + totalWaitingTime + "\t");
+        System.out.print("Total waiting time %: " + ((totalWaitingTime/(double)(totalTerminatedTime) * 100)) + "%\n");
+
     }
 }
