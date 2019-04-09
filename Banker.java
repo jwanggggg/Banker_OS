@@ -5,7 +5,7 @@ public class Banker {
     public static void main(String[] args) throws IOException {
         // Simulate the cycle process using a static var/ var main and decrementing at every cycle.
         // Use a readyQueue and running process.
-        File f = new File("lab3-io/input-11");
+        File f = new File("lab3-io/input-12");
         Scanner input = new Scanner(f);
         List<String> tempTaskList = new ArrayList<>();
         List<Task> taskList = new ArrayList<>();
@@ -28,8 +28,7 @@ public class Banker {
 
         // Put all the strings into an arraylist
         // Then keep a number representing each task. While number < numTasks, iterate and add tasks of that number into taskList
-        // put it into masterTaskList if initiated,
-        // put it into taskList
+        // put it into masterTaskList if initiated, put it into taskList
         
         while (input.hasNext()) {
             // Skip empty lines
@@ -83,23 +82,25 @@ public class Banker {
             tempTaskIndex++;
             cycle = 0;
         }
-
-        // for (Task task : taskList)
-        //     System.out.println(task);
-
         
         // ------------MAIN PROCESS LOOP------------
 
         Queue<Task> readyQueue = new LinkedList<>(); // Tasks at every given cycle
         LinkedList<Task> blockedQueue = new LinkedList<>(); // For potentially removing deadlocks
         
+        List<Integer> delayTimes = new ArrayList<>(); // Tracks each individual delay time
+        Set<Task> seenTasks = new HashSet<>(); // Tracks delayed tasks
+        List<Boolean> usedThisCycle = new ArrayList<>(); // Tracks if this task has been used this cycle
         List<Boolean> taskIsPending = new ArrayList<>(); // Tracking tasks that are pending
         Queue<Task> pendingBlockedQueue = new LinkedList<>(); // Tasks that weren't able to granted that must be re-added to blocked
         Queue<Task> pendingReadyQueue = new LinkedList<>(); // Tasks that weren't able to run because pending ran instead
         Queue<Task> pendingTerminatedQueue = new LinkedList<>(); // Tasks to be added to terminated list at end
 
-        for (int count = 0; count < numActiveTasks; count++)
+        for (int count = 0; count < numActiveTasks; count++) {
             taskIsPending.add(false);
+            usedThisCycle.add(false);
+            delayTimes.add(0);
+        }
         
         cycle = 0;
         boolean deadlockPossible = false;
@@ -107,12 +108,15 @@ public class Banker {
 
         while (terminatedList.size() + abortedTasks.size() < Task.numTasks) {
             System.out.println("Cycle: " + cycle);
+
+            // Reset usedThisCycle
+            for (int count = 0; count < usedThisCycle.size(); count++)
+                usedThisCycle.set(count, false);
+
             // Periodically check for ready tasks and load them
             for (Task currentTask : taskList) {
                 if (currentTask.readyTime == cycle && !abortedTasks.contains(currentTask.taskNumber)) {
-                    // Need another queue... to represent items that were skipped over?
                     readyQueue.add(currentTask);
-                    System.out.println("ADDING TO READY: " + currentTask);
                 }
             }
 
@@ -131,13 +135,13 @@ public class Banker {
                         
                 if (currentTask.numberRequested <= Task.maxClaims.get(claimIndex)) {
                     System.out.println("Task " + currentTask.taskNumber + "'s PENDING request for " + 
-                    currentTask.numberRequested + " was granted.");
+                    currentTask.numberRequested + " units of " + currentTask.resourceType + " was granted.");
                     Task.maxClaims.set(claimIndex, Task.maxClaims.get(claimIndex) - currentTask.numberRequested);
                     blockedTasks--;
                 }
                 else {
                     System.out.println("Task " + currentTask.taskNumber + "'s PENDING request for " +
-                    currentTask.numberRequested + " was unable to be granted.");
+                    currentTask.numberRequested + " units of " + currentTask.resourceType + " was unable to be granted.");
                     // Add the task to pending blocked queue, will be re-queued at the end of this cycle.
                     pendingBlockedQueue.add(currentTask);
                     currentTask.isBlocked = true;
@@ -145,14 +149,27 @@ public class Banker {
             }
 
             // Deadlock Check
-
             if (blockedTasks == numActiveTasks)
                 deadlockPossible = true;
             else {
                 deadlockPossible = false;
             }
 
-            while (!readyQueue.isEmpty()) {
+            while (!readyQueue.isEmpty()) {    
+                // If task delay exists, don't poll it
+                Task currPeekTask = readyQueue.peek();
+                int peekTime = readyQueue.peek().taskNumber - 1;
+                if (!seenTasks.contains(currPeekTask)) {
+                    delayTimes.set(peekTime, currPeekTask.delay);
+                    seenTasks.add(currPeekTask);
+                }
+
+                if (delayTimes.get(peekTime) > 0) {
+                    System.out.println("Delay time is " + delayTimes.get(peekTime));
+                    delayTimes.set(peekTime, delayTimes.get(peekTime) - 1);
+                    continue;
+                }
+
                 Task currentTask = readyQueue.poll();
                 int taskIndex = currentTask.taskNumber - 1;
                 Task masterTask = masterTaskList.get(taskIndex);
@@ -161,8 +178,9 @@ public class Banker {
                 if (abortedTasks.contains(currentTask.taskNumber))
                     continue;
 
+                // Check if it's been used this cycle
                 // Skip if it was handled by pending, set tasks as non-pending at end
-                if (taskIsPending.get(taskIndex)) {
+                if (taskIsPending.get(taskIndex) || usedThisCycle.get(taskIndex)) {
                     pendingReadyQueue.add(currentTask);
                     continue;
                 }
@@ -209,6 +227,7 @@ public class Banker {
                         pendingTerminatedQueue.add(currentTask);
                         break;
                 } // end switch
+                usedThisCycle.set(currentTask.taskNumber - 1, true);
 
                 if (blockedTasks == numActiveTasks) {
                     deadlockPossible = true;
@@ -345,10 +364,7 @@ public class Banker {
                 System.out.print("Terminated at: " + terminatedTime + "\t");
                 System.out.print("Waiting time: " + waitingTime + "\t");
                 System.out.print("Waiting time %: " + ((waitingTime/(double)(terminatedTime)) * 100) + "%\n");
-            }
-            
+            }   
         }
-
     }
-
 }
