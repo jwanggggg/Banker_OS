@@ -5,7 +5,7 @@ public class BankerFinal {
     public static void main(String[] args) throws IOException {
         // Simulate the cycle process using a static var/ var main and decrementing at every cycle.
         // Use a readyQueue and running process.
-        File f = new File("lab3-io/input-10");
+        File f = new File("lab3-io/input-11");
         Scanner input = new Scanner(f);
         List<String> tempTaskList = new ArrayList<>();
         
@@ -122,6 +122,7 @@ public class BankerFinal {
             for (int i = 0; i < Task.numTasks; i++)
                 list.add(0);
             resourcesNeeded.add(list);        
+            delayTimes.add(0);
         }
 
         cycle = 0;
@@ -151,7 +152,6 @@ public class BankerFinal {
             // BLOCKED Tasks
             while (!blockedQueue.isEmpty()) {
                 Task currentTask = blockedQueue.poll();
-                System.out.println("Pending task: " + currentTask);
 
                 int taskIndex = currentTask.taskNumber - 1;
                 Task masterTask = masterTaskList.get(taskIndex);
@@ -173,26 +173,24 @@ public class BankerFinal {
                         resources.set(resourceIndex, resourceAvailable - numberRequested);
                         currentTask.numberGranted += numberNeeded;
                         currentTask.numberNeeded -= numberNeeded;
-                        resourceNeedsList.set(resourceIndex, resourceAvailable - numberRequested);
+                        resourceNeedsList.set(taskIndex, resourceAvailable - numberRequested);
                         // Check each needsList
                         
-                        System.out.println("Needslist: " + resourcesNeeded);
-                        System.out.println("Banker: " + resources);
-    
+                        System.out.println("needsList: " + resourcesNeeded);
+                        System.out.println("banker: " + resources);
+
+                        int i = 0;
+
                         for (List<Integer> needsList : resourcesNeeded) {
+                            int bankerNum = resources.get(i);
                             boolean listIsSafe = true;
-                            int i = 0;
-                            while (i < needsList.size()) {
-                                int bankerNum = resources.get(i);
-                                int needsListNum = needsList.get(i);
-    
-                                // This needs list is not safe, cannot be satisfied with banker's current resources
+                            for (int j = 0; j < needsList.size(); j++) {
+                                int needsListNum = needsList.get(j);
+
                                 if (bankerNum - needsListNum < 0) {
                                     listIsSafe = false;
-                                    // break;
+                                    break;
                                 }
-    
-                                i++;
                             }
                             // Found at least one safe route. We can break.
                             if (listIsSafe) {
@@ -200,8 +198,10 @@ public class BankerFinal {
                                 System.out.println("isSafe: " + isSafe);
                                 break;
                             }
+
+                            i++;
                         }
-    
+
                         // If it's not safe, refund the resources
                         if (!isSafe) {
                             resources.set(resourceIndex, resourceAvailable);
@@ -269,11 +269,28 @@ public class BankerFinal {
 
                 int resourceType = peekTask.resourceType;
                 int taskNumber = peekTask.taskNumber;
-                int resourceAvailable = resourceType == 0 ? -1 : resources.get(resourceType - 1); // Skip this if taskType terminated
                 List<Integer> resourceNeedsList = resourceType == 0 ? null : resourcesNeeded.get(resourceType - 1);
+                int resourceAvailable = resourceType == 0 ? -1 : resources.get(resourceType - 1); // Skip this if taskType terminated
                 Task masterTask = masterTaskList.get(peekTask.taskNumber - 1);
 
-                // TODO: Delay checking
+                // Delay checking
+
+                if (!seenTasks.contains(peekTask)) {
+                    delayTimes.set(taskNumber - 1, peekTask.delay);
+                    seenTasks.add(peekTask);
+                }
+
+                if (delayTimes.get(taskNumber - 1) > 0) {
+                    System.out.println("Task " + taskNumber + " delayed, time remaining:" + delayTimes.get(taskNumber - 1));
+                    delayTimes.set(taskNumber - 1, delayTimes.get(taskNumber - 1) - 1);
+                    System.out.println("delay time left: " + delayTimes.get(taskNumber - 1));
+                    if (delayTimes.get(taskNumber - 1) == 0 && !currentQueue.isEmpty()
+                    && currentQueue.peek().type.equals("terminate")) {
+                        pendingTerminatedQueue.add(currentQueue.poll());
+                    }
+                        
+                    continue;
+                }
 
                 currentQueue.poll();
 
@@ -289,14 +306,10 @@ public class BankerFinal {
                         }
                         break;
                     case "request":
-                        // Add to blocked if the available resource is less than what the given task needs.
-                        
+                        // Add to blocked if the available resource is less than what the given task needs. 
                         int taskClaim = taskClaims.get(i);
                         int numberRequested = peekTask.numberRequested;
                         int numberNeeded = resourceNeedsList.get(taskNumber - 1);
-
-                        System.out.println("Resource available: " + resourceAvailable);
-                        System.out.println("Number needed: " + numberNeeded);
 
                         // Yes, complete the request
                         if (resourceAvailable >= numberNeeded) {
@@ -327,7 +340,7 @@ public class BankerFinal {
                         else {
                             System.out.println("Task " + (i + 1) + "'s request for " + numberRequested + 
                             " units of " + resourceType + " cannot be granted");
-                            blockedQueue.add(peekTask);
+                            pendingBlockedQueue.add(peekTask);
                         }
                         break;
                     case "release":
@@ -335,16 +348,22 @@ public class BankerFinal {
                         pendingReleaseQueue.add(peekTask);
                         System.out.println("Task " + (i + 1) + " releases " + peekTask.numberReleased + " units of " + resourceType);
                         break;
-                    // case "terminate":
-                    //     pendingTerminatedQueue.add(peekTask);
-                    //     break;
+                    case "terminate":
+                        if (delayTimes.get(peekTask.taskNumber - 1) <= 0) {
+                            pendingTerminatedQueue.add(peekTask);
+                        }
+                        
+                        break;
                 }
                 
-                // Quick, peek and check if the next is terminated and add if so
+                // Quick, peek and check if the next is terminated and has delay 0, and add if so
                 if (!currentQueue.isEmpty()) {
                     Task nextPeekTask = currentQueue.peek();
-                    if (nextPeekTask.type.equals("terminate"))
-                        pendingTerminatedQueue.add(currentQueue.poll());
+                    if (nextPeekTask.type.equals("terminate")) {
+                        if (nextPeekTask.delay <= 0)
+                            pendingTerminatedQueue.add(currentQueue.poll());
+                    }
+                        
                 }
 
             }
@@ -383,30 +402,34 @@ public class BankerFinal {
                 Task pendingBlockedTask = pendingBlockedQueue.poll();
                 pendingBlockedTask.isBlocked = true;
                 pendingBlockedTask.waitingTime++;
-                blockedQueue.addFirst(pendingBlockedTask);
+                masterTaskList.get(pendingBlockedTask.taskNumber - 1).waitingTime++;
+                blockedQueue.add(pendingBlockedTask);
             }
 
             // Pending terminated tasks get freed
             while (!pendingTerminatedQueue.isEmpty()) {
                 Task pendingTerminatedTask = pendingTerminatedQueue.poll();
+                if (terminatedList.contains(pendingTerminatedTask))
+                    continue;
                 int resourceType = pendingTerminatedTask.resourceType;
                 int taskNum = pendingTerminatedTask.taskNumber;
                 Task masterTask = masterTaskList.get(taskNum - 1);
+                int terminatedTime = cycle + 1;
                 terminatedList.add(pendingTerminatedTask); 
+                masterTaskList.get(taskNum - 1).terminatedTime = terminatedTime;
                 System.out.println("Task " + pendingTerminatedTask.taskNumber + " terminates.");
-
-                
             }
 
-            System.out.println("BANKER: " + resources);
-            System.out.println("Needed: " + resourcesNeeded);
+            // System.out.println("BANKER: " + resources);
+            // System.out.println("Needed: " + resourcesNeeded);
 
-            if (cycle == 10)
-                System.exit(0);
+            // if (cycle == 10)
+            //     System.exit(0);
 
             cycle++;
         }
 
+        printInfo(masterTaskList, abortedTasks, "BANKERS");
     }
 
 
@@ -708,12 +731,16 @@ public class BankerFinal {
             cycle++;
         } // end outer while
 
-        printInfo(masterTaskList, abortedTasks);
+        printInfo(masterTaskList, abortedTasks, "FIFO");
     }
 
-    public static void printInfo(List<Task> masterTaskList, Set<Integer> abortedTasks) {
+    public static void printInfo(List<Task> masterTaskList, Set<Integer> abortedTasks, String algorithm) {
         System.out.print("\n\n");
-        System.out.println("FIFO");
+        if (algorithm.equals("FIFO"))
+            System.out.println("FIFO");
+        else
+            System.out.println("BANKERS");
+
         System.out.print("------------\n");
         int numTasks = masterTaskList.size();
         int totalTerminatedTime = 0;
