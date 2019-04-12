@@ -1,11 +1,11 @@
 import java.util.*;
 import java.io.*;
 
-public class Banker {
+public class BankerFinal {
     public static void main(String[] args) throws IOException {
         // Simulate the cycle process using a static var/ var main and decrementing at every cycle.
         // Use a readyQueue and running process.
-        File f = new File("lab3-io/input-09");
+        File f = new File("lab3-io/input-10");
         Scanner input = new Scanner(f);
         List<String> tempTaskList = new ArrayList<>();
         
@@ -85,6 +85,9 @@ public class Banker {
                         break;
                 }
                 if (type.equals("initiate") && !seen.contains(currentTaskNumber)) {
+                    currentTask.resourcesGranted = new ArrayList<>();
+                    for (int i = 0; i < Task.numTasks; i++)
+                        currentTask.resourcesGranted.add(0);
                     masterTaskList.add(currentTask);
                     seen.add(currentTaskNumber);
                 }
@@ -125,18 +128,33 @@ public class Banker {
 
         while (terminatedList.size() + abortedTasks.size() < Task.numTasks) {
             System.out.println("Cycle: " + cycle);
-
+            
             // Periodically check for ready tasks and load them
-            for (Task currentTask : taskList) {
+            for (int i = 0; i < taskList.size(); i++) {
+                Task currentTask = taskList.get(i);
                 if (currentTask.readyTime == cycle && !abortedTasks.contains(currentTask.taskNumber)) {
                     readyQueue.get(currentTask.taskNumber - 1).add(currentTask);
                 }
+
+                // peek next and add if it's "termination"
+
+                if (i + 1 < taskList.size()) {
+                    Task nextTask = taskList.get(i + 1);
+                    if (nextTask.type.equals("terminate") && nextTask.readyTime == cycle + 1) {
+                        readyQueue.get(nextTask.taskNumber - 1).add(nextTask);
+                        i++;
+                    }       
+                }
+
             }
 
-            // Check blocked first
+            // BLOCKED Tasks
             while (!blockedQueue.isEmpty()) {
                 Task currentTask = blockedQueue.poll();
+                System.out.println("Pending task: " + currentTask);
+
                 int taskIndex = currentTask.taskNumber - 1;
+                Task masterTask = masterTaskList.get(taskIndex);
                 taskIsPending.set(taskIndex, true);
 
                 // If possible, grant resources and subtract accordingly.
@@ -145,17 +163,87 @@ public class Banker {
                 int numberRequested = currentTask.numberRequested;
                 List<Integer> resourceNeedsList = resourcesNeeded.get(resourceIndex);
                 int numberNeeded = resourceNeedsList.get(taskIndex);
+                boolean isSafe = false;
 
-                if (resourceAvailable >= numberNeeded) {
-                    // Grant the request, decrement from resources.
-                    System.out.println("Task " + currentTask.taskNumber + "'s PENDING request for " + 
-                    numberRequested + " units of " + currentTask.resourceType + " was granted.");
-                    currentTask.numberGranted += numberRequested;
-                    currentTask.numberNeeded -= numberRequested;
-                    resources.set(resourceIndex, resourceAvailable - numberRequested);
-                    resourceNeedsList.set(taskIndex, resourceAvailable - numberRequested);
-                }
+                // For more than one resource
+                if (resources.size() > 1) {
+                    if (resourceAvailable >= numberNeeded) {
+                        // First check has passed. Now check for safety:
+                        // if remaining resources can satisfy any request after claim has been subtracted.
+                        resources.set(resourceIndex, resourceAvailable - numberRequested);
+                        currentTask.numberGranted += numberNeeded;
+                        currentTask.numberNeeded -= numberNeeded;
+                        resourceNeedsList.set(resourceIndex, resourceAvailable - numberRequested);
+                        // Check each needsList
+                        
+                        System.out.println("Needslist: " + resourcesNeeded);
+                        System.out.println("Banker: " + resources);
+    
+                        for (List<Integer> needsList : resourcesNeeded) {
+                            boolean listIsSafe = true;
+                            int i = 0;
+                            while (i < needsList.size()) {
+                                int bankerNum = resources.get(i);
+                                int needsListNum = needsList.get(i);
+    
+                                // This needs list is not safe, cannot be satisfied with banker's current resources
+                                if (bankerNum - needsListNum < 0) {
+                                    listIsSafe = false;
+                                    // break;
+                                }
+    
+                                i++;
+                            }
+                            // Found at least one safe route. We can break.
+                            if (listIsSafe) {
+                                isSafe = true;
+                                System.out.println("isSafe: " + isSafe);
+                                break;
+                            }
+                        }
+    
+                        // If it's not safe, refund the resources
+                        if (!isSafe) {
+                            resources.set(resourceIndex, resourceAvailable);
+                            currentTask.numberGranted -= numberNeeded;
+                            currentTask.numberNeeded += numberNeeded;
+                            resourceNeedsList.set(taskIndex, resourceAvailable);
+                        } 
+    
+                        // If it is safe, grant the resources. We're good to go.
+                        else {
+                            masterTask.resourcesGranted.set(taskIndex, masterTask.resourcesGranted.get(taskIndex) + 
+                            numberRequested);
+                            
+                            System.out.println("Task " + currentTask.taskNumber + "'s PENDING request for " + 
+                            numberRequested + " units of " + currentTask.resourceType + " was granted.");
+                        }
+    
+                    }
+                } 
+                
+                // Only 1 resource
                 else {
+                    if (resourceAvailable >= numberNeeded) {
+                        // Grant the request, decrement from resources.
+                        System.out.println("Task " + currentTask.taskNumber + "'s PENDING request for " + 
+                        numberRequested + " units of " + currentTask.resourceType + " was granted.");
+                        currentTask.numberGranted += numberRequested;
+                        currentTask.numberNeeded -= numberRequested;
+                        resources.set(resourceIndex, resourceAvailable - numberRequested);
+                        resourceNeedsList.set(taskIndex, resourceAvailable - numberRequested);
+                    }
+                    else {
+                        // Add the task to pending blocked queue, will be re-queued at the end of this cycle.
+                        System.out.println("Task " + currentTask.taskNumber + "'s PENDING request for " +
+                        numberRequested + " units of " + currentTask.resourceType + " was not granted.");
+                        pendingBlockedQueue.add(currentTask);
+                        currentTask.isBlocked = true;
+                    }
+                }
+
+                
+                if (resources.size() > 1 && (resourceAvailable < numberNeeded || !isSafe)) {
                     // Add the task to pending blocked queue, will be re-queued at the end of this cycle.
                     System.out.println("Task " + currentTask.taskNumber + "'s PENDING request for " +
                     numberRequested + " units of " + currentTask.resourceType + " was not granted.");
@@ -207,6 +295,9 @@ public class Banker {
                         int numberRequested = peekTask.numberRequested;
                         int numberNeeded = resourceNeedsList.get(taskNumber - 1);
 
+                        System.out.println("Resource available: " + resourceAvailable);
+                        System.out.println("Number needed: " + numberNeeded);
+
                         // Yes, complete the request
                         if (resourceAvailable >= numberNeeded) {
                             // Check if abortion necessary
@@ -226,6 +317,9 @@ public class Banker {
                                 resources.set(resourceType - 1, resources.get(resourceType - 1) - numberRequested);
 
                                 masterTask.numberGranted += numberRequested;
+                                // Set the master task allocations as well
+                                masterTask.resourcesGranted.set(taskNumber - 1, 
+                                masterTask.resourcesGranted.get(taskNumber - 1) + numberRequested);
                             }
                         } 
                         
@@ -241,29 +335,39 @@ public class Banker {
                         pendingReleaseQueue.add(peekTask);
                         System.out.println("Task " + (i + 1) + " releases " + peekTask.numberReleased + " units of " + resourceType);
                         break;
-                    case "terminate":
-                        System.out.println("Task " + (i + 1) + " terminates.");
-                        terminatedList.add(peekTask);
-                        break;
+                    // case "terminate":
+                    //     pendingTerminatedQueue.add(peekTask);
+                    //     break;
                 }
                 
+                // Quick, peek and check if the next is terminated and add if so
+                if (!currentQueue.isEmpty()) {
+                    Task nextPeekTask = currentQueue.peek();
+                    if (nextPeekTask.type.equals("terminate"))
+                        pendingTerminatedQueue.add(currentQueue.poll());
+                }
+
             }
 
+            
             // Releases occur after the cycle has finished.
 
             while (!pendingReleaseQueue.isEmpty()) {
                 Task pendingReleaseTask = pendingReleaseQueue.poll();
+                int resourceType = pendingReleaseTask.resourceType;
+                int taskNumber = pendingReleaseTask.taskNumber;
                 int numberReleased = pendingReleaseTask.numberReleased;
+                Task masterTask = masterTaskList.get(taskNumber - 1);
 
                 pendingReleaseTask.numberGranted -= numberReleased;
                 pendingReleaseTask.numberNeeded += numberReleased;
  
-                int resourceType = pendingReleaseTask.resourceType;
-                int taskNumber = pendingReleaseTask.taskNumber;
                 List<Integer> resourceNeedsList  = resourcesNeeded.get(resourceType - 1);
 
                 resources.set(resourceType - 1, resources.get(resourceType - 1) + numberReleased);
                 resourceNeedsList.set(taskNumber - 1, resourceNeedsList.get(taskNumber - 1) + numberReleased);
+                // Set master resource allocations
+                masterTask.resourcesGranted.set(taskNumber - 1, masterTask.resourcesGranted.get(taskNumber - 1) - numberReleased);
             }
 
             // Pending ready tasks get readded to readyQueue
@@ -274,6 +378,7 @@ public class Banker {
                 taskIsPending.set(taskNumber, false);
             }
 
+            // Pending blocked tasks get readded to blockedQueue
             while (!pendingBlockedQueue.isEmpty()) {
                 Task pendingBlockedTask = pendingBlockedQueue.poll();
                 pendingBlockedTask.isBlocked = true;
@@ -281,15 +386,36 @@ public class Banker {
                 blockedQueue.addFirst(pendingBlockedTask);
             }
 
-            System.out.println("RESOURCES: " + resources);
+            // Pending terminated tasks get freed
+            while (!pendingTerminatedQueue.isEmpty()) {
+                Task pendingTerminatedTask = pendingTerminatedQueue.poll();
+                int resourceType = pendingTerminatedTask.resourceType;
+                int taskNum = pendingTerminatedTask.taskNumber;
+                Task masterTask = masterTaskList.get(taskNum - 1);
+                terminatedList.add(pendingTerminatedTask); 
+                System.out.println("Task " + pendingTerminatedTask.taskNumber + " terminates.");
 
-            // if (cycle == 10)
-            //     System.exit(0);
+                
+            }
+
+            System.out.println("BANKER: " + resources);
+            System.out.println("Needed: " + resourcesNeeded);
+
+            if (cycle == 10)
+                System.exit(0);
 
             cycle++;
         }
 
     }
+
+
+
+
+
+
+
+
 
     // --------------------------------------------------------------------------------
 
